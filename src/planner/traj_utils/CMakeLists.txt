@@ -22,6 +22,8 @@ add_message_files(
   DataDisp.msg
   PolyTraj.msg
   Assignment.msg
+  FormationAssignment.msg 
+  GroupInfo.msg 
   )
   
 # Generate added messages and services with any dependencies listed here

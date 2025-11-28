@@ -5,7 +5,7 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
-
+#include <ros/ros.h>
 #include <Eigen/Eigen>
 
 namespace poly_traj
@@ -1309,8 +1309,18 @@ namespace poly_traj
             double step;
             int i_dp = 0;
 
+            if (K <= 0) {
+                ROS_ERROR("getInitConstrainPoints: invalid K = %d", K);
+                return pts.setZero();
+            }
+
             for (int i = 0; i < N; ++i)
             {
+                double Ti = T1(i);
+                if (!std::isfinite(Ti) || Ti <= 0) {
+                    ROS_ERROR("getInitConstrainPoints: invalid T1(%d) = %f", i, Ti);
+                    return pts.setZero();
+                }
                 const auto &c = b.block<6, 3>(i * 6, 0);
                 step = T1(i) / K;
                 s1 = 0.0;
@@ -1326,6 +1336,11 @@ namespace poly_traj
                     beta0 << 1.0, s1, s2, s3, s4, s5;
                     pos = c.transpose() * beta0;
                     pts.col(i_dp) = pos;
+
+                    if (!pos.allFinite()) {
+                        ROS_ERROR("pos invalid at piece %d step %d: s=%f, coeff maybe wrong", i, j, s1);
+                        pos.setZero();
+                    }
 
                     s1 += step;
                     if (j != K || (j == K && i == N - 1))

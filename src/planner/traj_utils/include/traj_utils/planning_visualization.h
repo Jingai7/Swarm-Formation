@@ -12,6 +12,7 @@
 #include <nav_msgs/Odometry.h>
 #include <fstream>
 
+
 using std::vector;
 namespace ego_planner
 {
@@ -46,15 +47,26 @@ namespace ego_planner
       REGULAR_HEXAGON       = 1
     };
 
+
+
+
     int drone_id_;
+    int local_id_;
     int formation_type_;
     int formation_size_, line_size_;
     std::vector<int> line_begin_, line_end_;
+    std::vector<unsigned int>members;
     bool start_visual_;
+    bool fake = false;
     
     ros::Subscriber drone_0_odom_sub_, drone_1_odom_sub_, drone_2_odom_sub_, drone_3_odom_sub_; 
     ros::Subscriber drone_4_odom_sub_, drone_5_odom_sub_, drone_6_odom_sub_, drone_7_odom_sub_;
     ros::Subscriber drone_8_odom_sub_, drone_9_odom_sub_, drone_10_odom_sub_, drone_11_odom_sub_;
+    ros::Subscriber drone_12_odom_sub_, drone_13_odom_sub_, drone_14_odom_sub_, drone_15_odom_sub_; 
+    ros::Subscriber drone_16_odom_sub_, drone_17_odom_sub_, drone_18_odom_sub_, drone_19_odom_sub_;
+    ros::Subscriber drone_20_odom_sub_, drone_21_odom_sub_, drone_22_odom_sub_, drone_23_odom_sub_;
+
+    ros::Subscriber target_0_odom_sub_,target_1_odom_sub_;
 
     ros::Timer swarm_graph_visual_timer_;
     ros::Timer benchmark_recorder;
@@ -77,6 +89,21 @@ namespace ego_planner
     void drone_9_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
     void drone_10_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
     void drone_11_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_12_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_13_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_14_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_15_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_16_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_17_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_18_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_19_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_20_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_21_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_22_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    void drone_23_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+
+    // void target_0_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
+    // void target_1_odomeCallback(const nav_msgs::OdometryConstPtr &msg);
     
     void swarmGraphVisulCallback(const ros::TimerEvent &e);
     void benchmarkCallback(const ros::TimerEvent &e);
@@ -93,6 +120,12 @@ namespace ego_planner
     typedef std::shared_ptr<PlanningVisualization> Ptr;
 
     void initSwarmGraphVisual();
+
+        // Setter 方法
+    void setFormationSize(int size) { formation_size_ = size; }
+    void setLineSize(int size) { line_size_ = size; }
+    void setLocalId(int id) { local_id_ = id; }
+    void setMembers(const std::vector<unsigned int>& mem) { members = mem; }
 
     void displayMarkerList(ros::Publisher &pub, const vector<Eigen::Vector3d> &list, double scale,
                            Eigen::Vector4d color, int id,  bool show_sphere = true);

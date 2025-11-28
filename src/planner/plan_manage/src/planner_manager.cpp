@@ -27,6 +27,8 @@ namespace ego_planner
     nh.param("manager/planning_horizon", pp_.planning_horizen_, 5.0);
     nh.param("manager/use_distinctive_trajs", pp_.use_distinctive_trajs, false);
     nh.param("manager/drone_id", pp_.drone_id, -1);
+    // nh.param("manager/target_id", pp_.target_id, -1);
+
 
     grid_map_.reset(new GridMap);
     grid_map_->initMap(nh);
@@ -205,6 +207,9 @@ namespace ego_planner
                                    local_target_pt, local_target_vel,
                                    ts, initMJO, flag_polyInit))
     {
+      printf("\033[47;30m\n[drone %d replan %d]==============================================\033[0m\n",
+        pp_.drone_id, "!computeInitReferenceState");
+      
       return false;
     }
 
@@ -275,6 +280,119 @@ namespace ego_planner
     return true;
   }
 
+  bool EGOPlannerManager::reboundReplanTarget(
+    const Eigen::Vector3d &start_pt, const Eigen::Vector3d &start_vel, const Eigen::Vector3d &start_acc,
+    const double trajectory_start_time, const Eigen::Vector3d &local_target_pt, const Eigen::Vector3d &local_target_vel,
+    const bool flag_polyInit, const bool flag_randomPolyTraj,
+    const bool use_formation, const bool have_local_traj)
+{
+  static int count = 0;
+
+  printf("\033[47;30m\n[target %d replan %d]==============================================\033[0m\n",
+         pp_.drone_id, count++);
+
+  if ((start_pt - local_target_pt).norm() < 0.2)
+  {
+    cout << "Close to goal" << endl;
+  }
+
+  std::cout << "Local target = " << local_target_pt.transpose() << std::endl;
+  
+  
+
+  ros::Time t_start = ros::Time::now();
+  ros::Duration t_init, t_opt;
+
+  /*** STEP 1: INIT ***/
+  double ts = pp_.polyTraj_piece_length / pp_.max_vel_;
+
+ 
+  poly_traj::MinJerkOpt initMJO;
+  if (!computeInitReferenceState(start_pt, start_vel, start_acc,
+                                 local_target_pt, local_target_vel,
+                                 ts, initMJO, flag_polyInit))
+  {
+    return false;
+  }
+
+
+  Eigen::MatrixXd cstr_pts = initMJO.getInitConstrainPoints(ploy_traj_opt_->get_cps_num_prePiece_());
+  ploy_traj_opt_->setControlPoints(cstr_pts);
+
+  t_init = ros::Time::now() - t_start;
+
+  std::vector<Eigen::Vector3d> point_set;
+  for (int i = 0; i < cstr_pts.cols(); ++i)
+    point_set.push_back(cstr_pts.col(i));
+  std::cout<<"displaynitPathList============before"<<point_set[0]<<std::endl;
+  visualization_->displayInitPathList(point_set, 0.2, 0);
+  std::cout<<"displaynitPathList============after"<<std::endl;
+
+  t_start = ros::Time::now();
+
+  /*** STEP 2: OPTIMIZE ***/
+  bool flag_success = false;
+  vector<vector<Eigen::Vector3d>> vis_trajs;
+
+  poly_traj::Trajectory initTraj = initMJO.getTraj();
+  int PN = initTraj.getPieceNum();
+  Eigen::MatrixXd all_pos = initTraj.getPositions();
+  Eigen::MatrixXd innerPts = all_pos.block(0, 1, 3, PN - 1);
+  Eigen::Matrix<double, 3, 3> headState, tailState;
+  headState << initTraj.getJuncPos(0), initTraj.getJuncVel(0), initTraj.getJuncAcc(0);
+  tailState << initTraj.getJuncPos(PN), initTraj.getJuncVel(PN), initTraj.getJuncAcc(PN);
+  std::cout << "------ OptimizeTrajectory_lbfgs Inputs ------" << std::endl;
+  std::cout << "headState:\n" << headState << std::endl;
+  std::cout << "tailState:\n" << tailState << std::endl;
+  std::cout << "innerPts:\n" << innerPts << std::endl;
+  std::cout << "durations:\n" << initTraj.getDurations().transpose() << std::endl;
+  std::cout<<"use_formation"<<use_formation<<std::endl;
+  std::cout << "---------------------------------------------" << std::endl;  
+
+  flag_success = ploy_traj_opt_->OptimizeTrajectory_lbfgs(headState, tailState,
+                                                          innerPts, initTraj.getDurations(),
+                                                          cstr_pts, use_formation);
+
+  t_opt = ros::Time::now() - t_start;
+
+  if (!flag_success)
+  {
+    visualization_->displayFailedList(cstr_pts, 0);
+    continous_failures_count_++;
+    return false;
+  }
+
+  static double sum_time = 0;
+  static int count_success = 0;
+  sum_time += (t_init + t_opt).toSec();
+  count_success++;
+  cout << "total time:\033[42m" << (t_init + t_opt).toSec()
+       << "\033[0m,init:" << t_init.toSec()
+       << ",optimize:" << t_opt.toSec()
+       << ",avg_time=" << sum_time / count_success
+       << ",count_success= " << count_success << endl;
+  average_plan_time_ = sum_time / count_success;
+
+  if (have_local_traj && use_formation)
+  {
+    double delta_replan_time = trajectory_start_time - ros::Time::now().toSec();
+    if (delta_replan_time > 0)
+      ros::Duration(delta_replan_time).sleep();
+    traj_.setLocalTraj(ploy_traj_opt_->getMinJerkOptPtr()->getTraj(), trajectory_start_time);
+  }
+  else
+  {
+    traj_.setLocalTraj(ploy_traj_opt_->getMinJerkOptPtr()->getTraj(), ros::Time::now().toSec()); // todo time
+  }
+  std::cout<<"displaynitPathList============before"<<cstr_pts<<std::endl;
+  visualization_->displayOptimalList(cstr_pts, 0);
+  std::cout<<"displaynitPathList============after"<<std::endl;
+
+  // success. YoY
+  continous_failures_count_ = 0;
+  return true;
+}
+
   bool EGOPlannerManager::EmergencyStop(Eigen::Vector3d stop_pos)
   {
     auto ZERO = Eigen::Vector3d::Zero();
@@ -314,6 +432,31 @@ namespace ego_planner
 
     return false;
   }
+
+  // bool EGOPlannerManager::checkCollisiontarget(int target_id)
+  // {
+  //   if (traj_.local_traj.start_time < 1e9) // It means my first planning has not started
+  //     return false;
+
+  //   double my_traj_start_time = traj_.local_traj.start_time;
+  //   double other_traj_start_time = traj_.swarm_traj[target_id].start_time;
+
+  //   double t_start = max(my_traj_start_time, other_traj_start_time);
+  //   double t_end = min(my_traj_start_time + traj_.local_traj.duration * 2 / 3,
+  //                      other_traj_start_time + traj_.swarm_traj[target_id].duration);
+
+  //   for (double t = t_start; t < t_end; t += 0.03)
+  //   {
+  //     if ((traj_.local_traj.traj.getPos(t - my_traj_start_time) -
+  //          traj_.swarm_traj[target_id].traj.getPos(t - other_traj_start_time))
+  //             .norm() < ploy_traj_opt_->getSwarmClearance())
+  //     {
+  //       return true;
+  //     }
+  //   }
+
+  //   return false;
+  // }
 
   bool EGOPlannerManager::planGlobalTrajWaypoints(
       const Eigen::Vector3d &start_pos, const Eigen::Vector3d &start_vel,

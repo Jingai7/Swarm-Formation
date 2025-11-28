@@ -61,7 +61,6 @@ namespace ego_planner
 
     /* initialize main modules */
     visualization_.reset(new PlanningVisualization(nh));
-    swarm_new_creation_.reset(new PolyTrajOptimizer());
     planner_manager_.reset(new EGOPlannerManager);
     planner_manager_->initPlanModules(nh, visualization_);
     planner_manager_->deliverTrajToOptimizer(); // store trajectories
@@ -124,12 +123,8 @@ namespace ego_planner
       string sub_rel_topic_name = string("/drone_") + std::to_string(planner_manager_->pp_.drone_id) + string("_rel/pose");
       // central_goal = nh.subscribe("/move_base_simple/goal", 1, &EGOReplanFSM::formationWaypointCallback, this);
       std::cout<<"sub_topic_name "<<sub_topic_name.c_str()<<std::endl; 
-      rel_pos = nh.subscribe(sub_rel_topic_name.c_str(), 1, &EGOReplanFSM::relPositionCallback, this,ros::TransportHints().tcpNoDelay());
-      central_goal = nh.subscribe(sub_topic_name.c_str(), 1, &EGOReplanFSM::formationWaypointCallback, this,ros::TransportHints().tcpNoDelay());
-      formation_assignment_sub_ = nh.subscribe<traj_utils::FormationAssignment>("formation_assignment", 1,
-        &EGOReplanFSM::assignmentCallback,
-        this,
-        ros::TransportHints().tcpNoDelay());
+      rel_pos = nh.subscribe(sub_rel_topic_name.c_str(), 1, &EGOReplanFSM::relPositionCallback, this);
+      central_goal = nh.subscribe(sub_topic_name.c_str(), 1, &EGOReplanFSM::formationWaypointCallback, this);
     }
     cout << "Wrong target_type_ value! target_type_=" << target_type_ << endl;
   }
@@ -644,81 +639,6 @@ namespace ego_planner
     }
   }
   
-  void EGOReplanFSM::assignmentCallback(const traj_utils::FormationAssignmentConstPtr& msg)
-  {
-      int my_id = planner_manager_->pp_.drone_id;
-  
-      bool found = false;
-      bool has_goal_=false;
-  
-      for (auto& group : msg->groups)
-      {
-          // 查找该无人机是否属于某个 group
-          for (size_t i = 0; i < group.members.size(); i++)
-          {
-              if (group.members[i] == my_id)
-              {
-                  found = true;
-                  swarm_new_creation_->my_group_id_ = group.group_id;
-                  swarm_new_creation_->local_id_ = i;
-  
-                  swarm_new_creation_->formation_members_ = group.members;
-                  swarm_new_creation_->local_formation_size_ = swarm_new_creation_->formation_members_.size();
-  
-                  // 生成 desired formation
-                  vector<Eigen::Vector3d> offsets;
-                  offsets.resize(swarm_new_creation_->local_formation_size_);
-  
-                  for (int j = 0; j < swarm_new_creation_->local_formation_size_; j++)
-                  {
-                      offsets[j] = Eigen::Vector3d(group.formation_offsets[j].pose.position.x,group.formation_offsets[j].pose.position.y,group.formation_offsets[j].pose.position.z);
-                  }
-  
-                  // swarm_new_creation_->swarm_graph_->setDesiredForm(offsets);
-                  swarm_new_creation_->setFormationOffsets(offsets);
-
-                  // swarm_visual->formation_size_ = group.members.size();
-                  // swarm_visual->line_size_ = group.members.size();
-                  // swarm_visual->local_id_ = i;
-                  // swarm_visual->members = group.members;
-                  if (group.members.empty()) {
-                    ROS_WARN("line_size_is empty, skipping line generation");
-                  } 
-                  else if (visualization_ && !group.members.empty())
-                  {
-                    visualization_->setFormationSize(group.members.size());
-                    visualization_->setLineSize(group.members.size());
-                    visualization_->setLocalId(i);
-                    visualization_->setMembers(group.members);
-
-                  }
-
-                  // 小群目标
-                  if (!group.goals.empty())
-                  {
-                    auto &p = group.goals[0].pose.position;
-                    Eigen::Vector3d target_goal(p.x, p.y, p.z);
-                    has_goal_ = true;
-                  }
-  
-                  ROS_INFO("[Drone %d] Assigned to group %d (local id %d)",
-                      my_id, swarm_new_creation_->my_group_id_ , swarm_new_creation_->local_id_ );
-  
-                  return;
-              }
-          }
-      }
-  
-      if (!found)
-      {
-          ROS_WARN("[Drone %d] Not assigned to any group!", my_id);
-      }
-  }
-  
-
-
-
-
   void EGOReplanFSM::relPositionCallback(const geometry_msgs::PoseStampedPtr &msg)
   {
     int id = planner_manager_->pp_.drone_id;

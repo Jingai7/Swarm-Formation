@@ -40,8 +40,8 @@ bool SwarmGraph::updateGraph( const std::vector<Eigen::Vector3d> &swarm){
 bool SwarmGraph::setDesiredForm( const std::vector<Eigen::Vector3d> &swarm_des ){
     
     //Save the initial desired nodes
-    if( !have_desired )
-        nodes_des_init = swarm_des;
+    // if( !have_desired )//之前未注释
+    nodes_des_init = swarm_des;
 
     nodes_des = swarm_des;
     calcMatrices(swarm_des, A_des, D_des, Lhat_des);

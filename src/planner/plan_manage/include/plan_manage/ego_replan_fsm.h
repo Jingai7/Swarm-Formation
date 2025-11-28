@@ -20,7 +20,9 @@
 #include <traj_utils/planning_visualization.h>
 #include <traj_utils/PolyTraj.h>
 #include <traj_utils/Assignment.h>
-
+#include <traj_utils/FormationAssignment.h>
+#include <traj_utils/GroupInfo.h>
+// #include <traj_opt/poly_traj_optimizer>
 #include <fstream>
 #include <iostream>
 using std::vector;
@@ -46,14 +48,15 @@ namespace ego_planner
     enum TARGET_TYPE
     {
       MANUAL_TARGET = 1,
-      PRESET_TARGET ,
-      SWARM_MANUAL_TARGET 
+      PRESET_TARGET = 2,
+      SWARM_MANUAL_TARGET =3
     };
     
     /* planning utils */
     EGOPlannerManager::Ptr planner_manager_;
     PlanningVisualization::Ptr visualization_;
     traj_utils::DataDisp data_disp_;
+    PolyTrajOptimizer::Ptr swarm_new_creation_;
 
     /* parameters */
     int target_type_; // 1 mannual select, 2 hard code
@@ -68,6 +71,7 @@ namespace ego_planner
     bool enable_fail_safe_;
     int last_end_id_;
     double replan_trajectory_time_;
+    bool fake_ = false;
 
      // global goal setting for swarm
     Eigen::Vector3d swarm_central_pos_;
@@ -99,8 +103,9 @@ namespace ego_planner
     ros::Publisher replan_pub_, new_pub_, poly_traj_pub_, data_disp_pub_, swarm_trajs_pub_, broadcast_bspline_pub_;
     ros::Publisher broadcast_ploytraj_pub_;
     ros::Publisher reached_pub_, start_pub_;
-    ros::Subscriber central_goal;
+    ros::Subscriber central_goal,rel_pos;
     ros::Subscriber broadcast_ploytraj_sub_;
+    ros::Subscriber formation_assignment_sub_;
     // result file and file name
     string result_fn_;
     fstream result_file_;
@@ -127,6 +132,8 @@ namespace ego_planner
     void RecvBroadcastPolyTrajCallback(const traj_utils::PolyTrajConstPtr &msg);
     void polyTraj2ROSMsg(traj_utils::PolyTraj &msg);
     void formationWaypointCallback(const geometry_msgs::PoseStampedPtr &msg);
+    void relPositionCallback(const geometry_msgs::PoseStampedPtr &msg);
+    void assignmentCallback(const traj_utils::FormationAssignmentConstPtr& msg);
     bool frontEndPathSearching();
     bool checkCollision();
 
@@ -136,7 +143,7 @@ namespace ego_planner
     }
     ~EGOReplanFSM();
 
-
+    // PlanningVisualization::Ptr swarm_visual;
     void init(ros::NodeHandle &nh);
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW

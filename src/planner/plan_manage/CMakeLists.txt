@@ -11,6 +11,7 @@ find_package(PCL 1.7 REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
+  rospy
   std_msgs
   geometry_msgs
   quadrotor_msgs
@@ -47,6 +48,14 @@ add_executable(ego_planner_node
 target_link_libraries(ego_planner_node 
   ${catkin_LIBRARIES}
   )
+
+add_executable(target_planner_node 
+src/target_planner_node.cpp
+src/target_replan_fsm.cpp
+src/planner_manager.cpp
+)
+target_link_libraries(target_planner_node ${catkin_LIBRARIES})
+  
 #add_dependencies(ego_planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
 add_executable(traj_server src/traj_server.cpp)

@@ -30,10 +30,20 @@ namespace ego_planner
     t_init = ros::Time::now();
     
     nh.param("manager/drone_id", drone_id_, -1);
+    nh.getParam("manager/fake", fake);
     nh.param("optimization/formation_type", formation_type_, -1);
-    initSwarmGraphVisual();
-    swarm_odom.resize(formation_size_);
-    for (int i=0; i<formation_size_; i++)
+    
+    if (!fake)
+    {
+    // initSwarmGraphVisual();
+    // 初始化之前检查 formation_size_
+      if (formation_size_ <= 0) {
+        ROS_WARN("formation_size_ not set yet, skipping swarm_odom initialization");
+        return;  // 或者只是跳过初始化逻辑，稍后再初始化
+      }
+
+    swarm_odom.resize(24);
+    for (int i=0; i<24; i++)
       swarm_odom[i] = Eigen::Vector3d::Zero();
     
     drone_0_odom_sub_ = nh.subscribe("/drone_0_visual_slam/odom", 1, &PlanningVisualization::drone_0_odomeCallback, this);
@@ -48,16 +58,44 @@ namespace ego_planner
     drone_9_odom_sub_ = nh.subscribe("/drone_9_visual_slam/odom", 1, &PlanningVisualization::drone_9_odomeCallback, this);
     drone_10_odom_sub_ = nh.subscribe("/drone_10_visual_slam/odom", 1, &PlanningVisualization::drone_10_odomeCallback, this);
     drone_11_odom_sub_ = nh.subscribe("/drone_11_visual_slam/odom", 1, &PlanningVisualization::drone_11_odomeCallback, this);
-    
+    drone_12_odom_sub_ = nh.subscribe("/drone_12_visual_slam/odom", 1, &PlanningVisualization::drone_12_odomeCallback, this);
+    drone_13_odom_sub_ = nh.subscribe("/drone_13_visual_slam/odom", 1, &PlanningVisualization::drone_13_odomeCallback, this);
+    drone_14_odom_sub_ = nh.subscribe("/drone_14_visual_slam/odom", 1, &PlanningVisualization::drone_14_odomeCallback, this);
+    drone_15_odom_sub_ = nh.subscribe("/drone_15_visual_slam/odom", 1, &PlanningVisualization::drone_15_odomeCallback, this);
+    drone_16_odom_sub_ = nh.subscribe("/drone_16_visual_slam/odom", 1, &PlanningVisualization::drone_16_odomeCallback, this);
+    drone_17_odom_sub_ = nh.subscribe("/drone_17_visual_slam/odom", 1, &PlanningVisualization::drone_17_odomeCallback, this);
+    drone_18_odom_sub_ = nh.subscribe("/drone_18_visual_slam/odom", 1, &PlanningVisualization::drone_18_odomeCallback, this);
+    drone_19_odom_sub_ = nh.subscribe("/drone_19_visual_slam/odom", 1, &PlanningVisualization::drone_19_odomeCallback, this);
+    drone_20_odom_sub_ = nh.subscribe("/drone_20_visual_slam/odom", 1, &PlanningVisualization::drone_20_odomeCallback, this);
+    drone_21_odom_sub_ = nh.subscribe("/drone_21_visual_slam/odom", 1, &PlanningVisualization::drone_21_odomeCallback, this);
+    drone_22_odom_sub_ = nh.subscribe("/drone_22_visual_slam/odom", 1, &PlanningVisualization::drone_22_odomeCallback, this);
+    drone_23_odom_sub_ = nh.subscribe("/drone_23_visual_slam/odom", 1, &PlanningVisualization::drone_23_odomeCallback, this);
+
+    drone_id_=local_id_;
     
     if (drone_id_ == 0){
       swarm_graph_visual_timer_ = nh.createTimer(ros::Duration(0.01), &PlanningVisualization::swarmGraphVisulCallback, this);
     }
   }
+
+
+  }
   
   void PlanningVisualization::swarmGraphVisulCallback(const ros::TimerEvent &e){
     if (line_size_==0)
       return;
+
+    line_begin_.resize(line_size_);
+    line_end_.resize(line_size_);
+    std::cout<<"line_size_"<<line_size_<<std::endl;
+  
+    for(int i = 0; i < line_size_ - 1; i++)
+    {
+        line_begin_.push_back(members[i]);
+        line_end_.push_back(members[i + 1]);
+    }
+    line_begin_.push_back(members[line_size_ - 1]);
+    line_end_.push_back(members[0]);
     
     visualization_msgs::MarkerArray lines;
     for (int i=0; i<line_size_; i++){
@@ -111,111 +149,757 @@ namespace ego_planner
     if (formation_size_ <=0 )
       return;
     
-    swarm_odom[0] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[0] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // int drone_id = 0;
+
+    const unsigned int drone_id = 0;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_1_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
     if (formation_size_ <=1 )
       return;
     
-    swarm_odom[1] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[1] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 1;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_2_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
     if (formation_size_ <=2 )
       return;
     
-    swarm_odom[2] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[2] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 2;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_3_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
     if (formation_size_ <=3 )
       return;
     
-    swarm_odom[3] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[3] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 3;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_4_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
     if (formation_size_ <=4 )
       return;
     
-    swarm_odom[4] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[4] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 4;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_5_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
-    if (formation_size_ <=5 )
+    if (formation_size_ <=4 )
       return;
     
-    swarm_odom[5] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[5] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 5;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_6_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
-    if (formation_size_ <=5 )
+    if (formation_size_ <=4 )
       return;
     
-    swarm_odom[6] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[6] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 6;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_7_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
-    if (formation_size_ <=7 )
+    if (formation_size_ <=4 )
       return;
     
-    swarm_odom[7] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[7] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 7;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_8_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
-    if (formation_size_ <=8 )
+    if (formation_size_ <=4 )
       return;
     
-    swarm_odom[8] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[8] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 8;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_9_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
-    if (formation_size_ <=9 )
+    if (formation_size_ <=4 )
       return;
     
-    swarm_odom[9] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[9] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 9;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_10_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
-    if (formation_size_ <=10 )
+    if (formation_size_ <=4 )
       return;
     
-    swarm_odom[10] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[10] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 10;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
   void PlanningVisualization::drone_11_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
-    if (formation_size_ <=11 )
+    if (formation_size_ <=4 )
       return;
     
-    swarm_odom[11] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    // swarm_odom[11] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 11;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+  void PlanningVisualization::drone_12_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+    // swarm_odom[12] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 12;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
   }
 
-  void PlanningVisualization::initSwarmGraphVisual(){
-    switch (formation_type_)
-    {
-    case FORMATION_TYPE::NONE_FORMATION:
-    {
-      formation_size_ = 0;
-      line_size_      = 0;
-      break;
+  void PlanningVisualization::drone_13_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+    // swarm_odom[3] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 13;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
     }
 
-    case FORMATION_TYPE::REGULAR_HEXAGON:
-    {
-      formation_size_ = 7;
-      line_size_      = 12;
-      line_begin_.resize(line_size_);
-      line_end_.resize(line_size_);
-      line_begin_ = {0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6};
-      line_end_   = {1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 1};
-      
-      break;
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
     }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_14_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
     
-    default:
-      break;
+    // swarm_odom[4] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 14;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
     }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_15_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+    // swarm_odom[5] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 15;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_16_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+    // swarm_odom[6] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 16;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_17_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+    // swarm_odom[7] << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z;
+    const unsigned int drone_id = 17;
+
+    // ① 判断该无人机是否属于小群
+    if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+        return;  // 不在小群里，忽略消息
+    }
+
+    // ② swarm_odom 已 resize？否则避免越界写
+    if (drone_id >= swarm_odom.size()) {
+        ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                          drone_id, swarm_odom.size());
+        return;
+    }
+
+    // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+    const auto &p = msg->pose.pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+        return;
+    }
+
+    // ④ 安全写入
+    swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_18_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+      const unsigned int drone_id = 18;
+
+      // ① 判断该无人机是否属于小群
+      if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+          return;  // 不在小群里，忽略消息
+      }
+  
+      // ② swarm_odom 已 resize？否则避免越界写
+      if (drone_id >= swarm_odom.size()) {
+          ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                            drone_id, swarm_odom.size());
+          return;
+      }
+  
+      // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+      const auto &p = msg->pose.pose.position;
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+          ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+          return;
+      }
+  
+      // ④ 安全写入
+      swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_19_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+      const unsigned int drone_id = 19;
+
+      // ① 判断该无人机是否属于小群
+      if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+          return;  // 不在小群里，忽略消息
+      }
+  
+      // ② swarm_odom 已 resize？否则避免越界写
+      if (drone_id >= swarm_odom.size()) {
+          ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                            drone_id, swarm_odom.size());
+          return;
+      }
+  
+      // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+      const auto &p = msg->pose.pose.position;
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+          ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+          return;
+      }
+  
+      // ④ 安全写入
+      swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_20_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+      const unsigned int drone_id = 20;
+
+      // ① 判断该无人机是否属于小群
+      if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+          return;  // 不在小群里，忽略消息
+      }
+  
+      // ② swarm_odom 已 resize？否则避免越界写
+      if (drone_id >= swarm_odom.size()) {
+          ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                            drone_id, swarm_odom.size());
+          return;
+      }
+  
+      // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+      const auto &p = msg->pose.pose.position;
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+          ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+          return;
+      }
+  
+      // ④ 安全写入
+      swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_21_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+      const unsigned int drone_id = 21;
+
+      // ① 判断该无人机是否属于小群
+      if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+          return;  // 不在小群里，忽略消息
+      }
+  
+      // ② swarm_odom 已 resize？否则避免越界写
+      if (drone_id >= swarm_odom.size()) {
+          ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                            drone_id, swarm_odom.size());
+          return;
+      }
+  
+      // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+      const auto &p = msg->pose.pose.position;
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+          ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+          return;
+      }
+  
+      // ④ 安全写入
+      swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+  
+  void PlanningVisualization::drone_22_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+      const unsigned int drone_id = 22;
+
+      // ① 判断该无人机是否属于小群
+      if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+          return;  // 不在小群里，忽略消息
+      }
+  
+      // ② swarm_odom 已 resize？否则避免越界写
+      if (drone_id >= swarm_odom.size()) {
+          ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                            drone_id, swarm_odom.size());
+          return;
+      }
+  
+      // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+      const auto &p = msg->pose.pose.position;
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+          ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+          return;
+      }
+  
+      // ④ 安全写入
+      swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+
+  void PlanningVisualization::drone_23_odomeCallback(const nav_msgs::OdometryConstPtr &msg){
+    if (formation_size_ <=4 )
+      return;
+    
+      const unsigned int drone_id = 23;
+
+      // ① 判断该无人机是否属于小群
+      if (std::find(members.begin(), members.end(), drone_id) == members.end()) {
+          return;  // 不在小群里，忽略消息
+      }
+  
+      // ② swarm_odom 已 resize？否则避免越界写
+      if (drone_id >= swarm_odom.size()) {
+          ROS_WARN_THROTTLE(1.0, "swarm_odom size too small! drone_id=%u, size=%ld",
+                            drone_id, swarm_odom.size());
+          return;
+      }
+  
+      // ③ odom 数据有效性检查（避免 PCL 那种 NaN 崩溃）
+      const auto &p = msg->pose.pose.position;
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+          ROS_WARN_THROTTLE(1.0, "Invalid (NaN/Inf) odom received for drone %u", drone_id);
+          return;
+      }
+  
+      // ④ 安全写入
+      swarm_odom[drone_id] << p.x, p.y, p.z;
+  }
+  
+  void PlanningVisualization::initSwarmGraphVisual(){
+    // switch (formation_type_)
+    // {
+    // case FORMATION_TYPE::NONE_FORMATION:
+    // {
+    //   formation_size_ = 0;
+    //   line_size_      = 0;
+    //   break;
+    // }
+
+    // case FORMATION_TYPE::REGULAR_HEXAGON:
+    // {
+    //   formation_size_ = 7;
+    //   line_size_      = 12;
+    //   line_begin_.resize(line_size_);
+    //   line_end_.resize(line_size_);
+    //   line_begin_ = {0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6};
+    //   line_end_   = {1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 1};
+      
+    //   break;
+    // }
+    
+    // default:
+    //   break;
+    // }
+
+    line_begin_.resize(line_size_);
+    line_end_.resize(line_size_);
+    std::cout<<"line_size_"<<line_size_<<std::endl;
+ 
+    for(int i = 0; i < line_size_ - 1; i++)
+    {
+        line_begin_.push_back(members[i]);
+        line_end_.push_back(members[i + 1]);
+    }
+    line_begin_.push_back(members[line_size_ - 1]);
+    line_end_.push_back(members[0]);
+
+    
+
   }
 
   // // real ids used: {id, id+1000}
@@ -241,16 +925,38 @@ namespace ego_planner
     sphere.scale.z = scale;
     line_strip.scale.x = scale / 2;
     geometry_msgs::Point pt;
+
     for (int i = 0; i < int(list.size()); i++)
     {
-      pt.x = list[i](0);
-      pt.y = list[i](1);
-      pt.z = list[i](2);
+      const auto &v = list[i];
+      if (!std::isfinite(v(0)) || !std::isfinite(v(1)) || !std::isfinite(v(2)) ||
+          fabs(v(0)) > 1e5 || fabs(v(1)) > 1e5 || fabs(v(2)) > 1e5)
+      {
+        ROS_ERROR("[displayMarkerList] Received NaN/Inf in list! id=%d", id);
+        ROS_WARN("[displayMarkerList] Invalid point[%d] = (%.3f, %.3f, %.3f), skipping",
+                 i, v(0), v(1), v(2));
+        continue;  // 跳过非法点
+      }
+    
+      pt.x = v(0);
+      pt.y = v(1);
+      pt.z = v(2);
       if (show_sphere) sphere.points.push_back(pt);
       line_strip.points.push_back(pt);
     }
+    
+    // for (int i = 0; i < int(list.size()); i++)
+    // {
+    //   pt.x = list[i](0);
+    //   pt.y = list[i](1);
+    //   pt.z = list[i](2);
+    //   if (show_sphere) sphere.points.push_back(pt);
+    //   line_strip.points.push_back(pt);
+    // }
     if (show_sphere) pub.publish(sphere);
     pub.publish(line_strip);
+
+
   }
 
   // real ids used: {id, id+1}
@@ -364,6 +1070,7 @@ namespace ego_planner
     }
 
     Eigen::Vector4d color(0, 0.5, 0.5, 1);
+    ROS_INFO("displayGlobalPathList! id=%d", id);
     displayMarkerList(global_list_pub, init_pts, scale, color, id);
   }
 
@@ -381,6 +1088,7 @@ namespace ego_planner
     {
       Eigen::Vector4d color(0, 0, 0, 0);
       vector<Eigen::Vector3d> blank;
+      ROS_INFO("displayMultiInitPathList! scale=%d", scale);
       displayMarkerList(init_list_pub, blank, scale, color, id, false);
       ros::Duration(0.001).sleep();
     }
@@ -389,6 +1097,7 @@ namespace ego_planner
     for ( int id=0; id<(int)init_trajs.size(); id++ )
     {
       Eigen::Vector4d color(0, 0, 1, 0.7);
+      ROS_INFO("displayMultiInitPathList!111111111 scale=%d", scale);
       displayMarkerList(init_list_pub, init_trajs[id], scale, color, id, false);
       ros::Duration(0.001).sleep();
       last_nums++;
@@ -405,6 +1114,7 @@ namespace ego_planner
     }
 
     Eigen::Vector4d color(0, 0, 1, 1);
+    ROS_INFO("displayInitPathList! id=%d", id);
     displayMarkerList(init_list_pub, init_pts, scale, color, id);
   }
 
@@ -417,6 +1127,7 @@ namespace ego_planner
     }
 
     Eigen::Vector4d color(1, 1, 0, 1);
+    ROS_INFO("displayInitPathListDebug! id=%d", id);
     displayMarkerList(init_list_debug_pub, init_pts, scale, color, id);
   }
 
@@ -435,6 +1146,7 @@ namespace ego_planner
       list.push_back(pt);
     }
     Eigen::Vector4d color(1.0, 0.0, 0, 0.8);
+    ROS_INFO("displayOptimalList! id=%d", id);
     displayMarkerList(optimal_list_pub, list, 0.1, color, id);
     // displayMarkerList(optimal_list_pub, list, 0.08, color, id);
   }
@@ -454,6 +1166,7 @@ namespace ego_planner
       list.push_back(pt);
     }
     Eigen::Vector4d color(0.3, 0, 0, 1);
+    ROS_INFO("displayFailedList! id=%d", id);
     displayMarkerList(failed_list_pub, list, 0.15, color, id);
   }
 
@@ -479,6 +1192,7 @@ namespace ego_planner
         list.push_back(pt);
       }
       //Eigen::Vector4d color(0.5,0.5,0,1);
+      ROS_INFO("displayAStarList! id=%d", id);
       displayMarkerList(a_star_list_pub, list, scale, color, id + i); // real ids used: [ id ~ id+a_star_paths.size() ]
       i++;
     }
@@ -506,10 +1220,12 @@ namespace ego_planner
 
     if ( !type.compare("0") )
     {
+      ROS_INFO("displayIntermediatePt! !type.compare0 id=%d", id);
       displayMarkerList(intermediate_pt0_pub, pts_, 0.1, color, id);
     }
     else if ( !type.compare("1") )
     {
+      ROS_INFO("displayIntermediatePt! !type.compare1 id=%d", id);
       displayMarkerList(intermediate_pt1_pub, pts_, 0.1, color, id);
     }
   }

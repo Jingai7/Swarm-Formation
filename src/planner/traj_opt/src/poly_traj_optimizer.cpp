@@ -386,6 +386,10 @@ namespace ego_planner
       return false;
 
     int size = swarm_trajs_->size();
+    auto& members = formation_members_;
+    drone_id_ = local_id_;//局部id
+    formation_size_=local_formation_size_;
+
     if (drone_id_ == formation_size_ - 1)
       size = formation_size_;
 
@@ -752,7 +756,7 @@ namespace ego_planner
 
     // set the formation type
     swarm_graph_.reset(new SwarmGraph);
-    setDesiredFormation(formation_type_);
+    // setDesiredFormation(formation_type_);
   }
 
   void PolyTrajOptimizer::setEnvironment(const GridMap::Ptr &map)

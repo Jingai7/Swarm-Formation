@@ -32,6 +32,7 @@ namespace ego_planner
   {
     poly_traj::Trajectory traj;
     int drone_id; // A negative value indicates no received trajectories.
+    // int target_id;
     int traj_id;
     double duration;
     double start_time; // world time
@@ -89,6 +90,7 @@ namespace ego_planner
     double planning_horizen_;
     bool use_distinctive_trajs;
     int drone_id; // single drone: drone_id <= -1, swarm: drone_id >= 0
+    // int target_id;
 
     /* processing time */
     double time_search_ = 0.0;

@@ -33,6 +33,11 @@ namespace ego_planner
         const double trajectory_start_time, const Eigen::Vector3d &end_pt, const Eigen::Vector3d &end_vel, 
         const bool flag_polyInit, const bool flag_randomPolyTraj,
         const bool use_formation, const bool have_local_traj);
+    bool reboundReplanTarget(
+      const Eigen::Vector3d &start_pt, const Eigen::Vector3d &start_vel, const Eigen::Vector3d &start_acc, 
+      const double trajectory_start_time, const Eigen::Vector3d &end_pt, const Eigen::Vector3d &end_vel, 
+      const bool flag_polyInit, const bool flag_randomPolyTraj,
+      const bool use_formation, const bool have_local_traj);
     bool computeInitReferenceState(
         const Eigen::Vector3d &start_pt, const Eigen::Vector3d &start_vel, 
         const Eigen::Vector3d &start_acc, const Eigen::Vector3d &local_target_pt,
@@ -56,6 +61,7 @@ namespace ego_planner
     double getSwarmClearance(void) { return ploy_traj_opt_->getSwarmClearance(); }
 
     bool checkCollision(int drone_id);
+    bool checkCollisiontarget(int target_id);
 
     void fakeSwarmTrajs(void);
 

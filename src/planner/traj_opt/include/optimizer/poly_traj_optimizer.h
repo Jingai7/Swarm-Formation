@@ -89,9 +89,21 @@ namespace ego_planner
 
   public:
 
+    std::vector<unsigned int> formation_members_;     // 当前无人机所在编队的所有全局ID
+    int local_id_;                           // 当前无人机在小群中的索引
+    int local_formation_size_;               // 当前小群的无人机数量
+    int my_group_id_;
+
+   
+
+  
+
     PolyTrajOptimizer() {}
     ~PolyTrajOptimizer() {}
-
+   
+    void setFormationOffsets(const std::vector<Eigen::Vector3d> &offsets) {
+      swarm_graph_->setDesiredForm(offsets);
+  }
     /* set variables */
     void setParam(ros::NodeHandle &nh);
     void setEnvironment(const GridMap::Ptr &map);

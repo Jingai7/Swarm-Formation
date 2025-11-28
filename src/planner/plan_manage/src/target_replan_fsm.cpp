@@ -28,7 +28,6 @@ namespace ego_planner
     nh.param("fsm/emergency_time", emergency_time_, 1.0);
     nh.param("fsm/realworld_experiment", flag_realworld_experiment_, false);
     nh.param("fsm/fail_safe", enable_fail_safe_, true);
-    nh.param("fsm/result_file", result_fn_, string("/home/zuzu/Documents/Benchmark/21-RSS-ego-swarm/2.24/ego/ego_swarm.txt"));
     nh.param("fsm/replan_trajectory_time", replan_trajectory_time_, 0.0);
     nh.getParam("fake", fake_);
 
@@ -49,19 +48,18 @@ namespace ego_planner
       nh.param("fsm/target" + to_string(i) + "_y", goalpoints_[i][1], -1.0);
       nh.param("fsm/target" + to_string(i) + "_z", goalpoints_[i][2], -1.0);
     }
-//自己注释掉的
-    // for (int i = 0; i < 7; i++)
-    // {
-    //   nh.param("global_goal/relative_pos_" + to_string(i) + "/x", swarm_relative_pts_[i][0], -1.0);
-    //   nh.param("global_goal/relative_pos_" + to_string(i) + "/y", swarm_relative_pts_[i][1], -1.0);
-    //   nh.param("global_goal/relative_pos_" + to_string(i) + "/z", swarm_relative_pts_[i][2], -1.0);
-    // }
+
+    for (int i = 0; i < 7; i++)
+    {
+      nh.param("global_goal/relative_pos_" + to_string(i) + "/x", swarm_relative_pts_[i][0], -1.0);
+      nh.param("global_goal/relative_pos_" + to_string(i) + "/y", swarm_relative_pts_[i][1], -1.0);
+      nh.param("global_goal/relative_pos_" + to_string(i) + "/z", swarm_relative_pts_[i][2], -1.0);
+    }
 
     nh.param("global_goal/swarm_scale", swarm_scale_, 1.0);
 
     /* initialize main modules */
     visualization_.reset(new PlanningVisualization(nh));
-    swarm_new_creation_.reset(new PolyTrajOptimizer());
     planner_manager_.reset(new EGOPlannerManager);
     planner_manager_->initPlanModules(nh, visualization_);
     planner_manager_->deliverTrajToOptimizer(); // store trajectories
@@ -90,9 +88,7 @@ namespace ego_planner
 
     if (target_type_ == TARGET_TYPE::MANUAL_TARGET)
     {
-      std::cout<<"MANUAL_TARGET=============="<<std::endl;
-      string sub_topic_name = string("/drone_") + std::to_string(planner_manager_->pp_.drone_id) + string("_target/odom");
-      waypoint_sub_ = nh.subscribe(sub_topic_name.c_str(), 1, &EGOReplanFSM::waypointCallback, this);
+      waypoint_sub_ = nh.subscribe("/goal", 1, &EGOReplanFSM::waypointCallback, this);
     }
     else if (target_type_ == TARGET_TYPE::PRESET_TARGET)
     {
@@ -120,16 +116,7 @@ namespace ego_planner
     }
     else if (target_type_ == TARGET_TYPE::SWARM_MANUAL_TARGET)
     {
-      string sub_topic_name = string("/drone_") + std::to_string(planner_manager_->pp_.drone_id) + string("_target/odom");
-      string sub_rel_topic_name = string("/drone_") + std::to_string(planner_manager_->pp_.drone_id) + string("_rel/pose");
-      // central_goal = nh.subscribe("/move_base_simple/goal", 1, &EGOReplanFSM::formationWaypointCallback, this);
-      std::cout<<"sub_topic_name "<<sub_topic_name.c_str()<<std::endl; 
-      rel_pos = nh.subscribe(sub_rel_topic_name.c_str(), 1, &EGOReplanFSM::relPositionCallback, this,ros::TransportHints().tcpNoDelay());
-      central_goal = nh.subscribe(sub_topic_name.c_str(), 1, &EGOReplanFSM::formationWaypointCallback, this,ros::TransportHints().tcpNoDelay());
-      formation_assignment_sub_ = nh.subscribe<traj_utils::FormationAssignment>("formation_assignment", 1,
-        &EGOReplanFSM::assignmentCallback,
-        this,
-        ros::TransportHints().tcpNoDelay());
+      central_goal = nh.subscribe("/move_base_simple/goal", 1, &EGOReplanFSM::formationWaypointCallback, this);
     }
     cout << "Wrong target_type_ value! target_type_=" << target_type_ << endl;
   }
@@ -172,10 +159,12 @@ namespace ego_planner
 
     case SEQUENTIAL_START: // for swarm or single drone with drone_id = 0
     {
-
+        // std::cout<<"SEQUENTIAL_START"<<planner_manager_->pp_.target_id<<std::endl;
         if (planner_manager_->pp_.drone_id <= 0 || (planner_manager_->pp_.drone_id >= 1 && have_recv_pre_agent_))
         {
+          std::cout<<"SEQUENTIAL_START111111111"<<std::endl;
           bool success = planFromGlobalTraj(1);
+          std::cout<<"SEQUENTIAL_START222222222222222"<<std::endl;
   
           if (success)
           {
@@ -187,7 +176,6 @@ namespace ego_planner
             changeFSMExecState(SEQUENTIAL_START, "FSM");
           }
         }
-      
       break;
     }
 
@@ -250,7 +238,7 @@ namespace ego_planner
 
           result_file_ << planner_manager_->pp_.drone_id << "\t" << (ros::Time::now() - planner_manager_->global_start_time_).toSec() << "\t" << planner_manager_->average_plan_time_ << "\n";
 
-          printf("\033[47;30m\n[drone %d reached goal]==============================================\033[0m\n",
+          printf("\033[47;30m\n[target %d reached goal]==============================================\033[0m\n",
                  planner_manager_->pp_.drone_id);
           std_msgs::Bool msg;
           msg.data = true;
@@ -403,7 +391,7 @@ namespace ego_planner
     if (msg->pose.position.z < -0.1)
       return;
 
-    cout << "Triggered!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << endl;
+    cout << "Triggered!" << endl;
     // trigger_ = true;
     init_pt_ = odom_pos_;
 
@@ -469,9 +457,10 @@ namespace ego_planner
 
   void EGOReplanFSM::RecvBroadcastPolyTrajCallback(const traj_utils::PolyTrajConstPtr &msg)
   {
+    std::cout<<"RecvBroadcastPolyTrajCallback"<<std::endl;
     if (msg->drone_id < 0)
     {
-      ROS_ERROR("drone_id < 0 is not allowed in a swarm system!");
+      ROS_ERROR("target_id < 0 is not allowed in a swarm system!");
       return;
     }
     if (msg->order != 5)
@@ -542,6 +531,7 @@ namespace ego_planner
     /* Check if receive agents have lower drone id */
     if (!have_recv_pre_agent_)
     {
+      std::cout<<"have_recv_pre_agent_"<<std::endl;
       if ((int)planner_manager_->traj_.swarm_traj.size() >= planner_manager_->pp_.drone_id)
       {
         for (int i = 0; i < planner_manager_->pp_.drone_id; ++i)
@@ -600,7 +590,7 @@ namespace ego_planner
     }
     if (planner_manager_->pp_.drone_id >= 1 && !have_recv_pre_agent_)
     {
-      cout << ", haven't receive traj from previous drone";
+      cout << ", haven't receive traj from previous target";
     }
 
     cout << string(dot_nums, '.') << endl;
@@ -644,90 +634,6 @@ namespace ego_planner
     }
   }
   
-  void EGOReplanFSM::assignmentCallback(const traj_utils::FormationAssignmentConstPtr& msg)
-  {
-      int my_id = planner_manager_->pp_.drone_id;
-  
-      bool found = false;
-      bool has_goal_=false;
-  
-      for (auto& group : msg->groups)
-      {
-          // 查找该无人机是否属于某个 group
-          for (size_t i = 0; i < group.members.size(); i++)
-          {
-              if (group.members[i] == my_id)
-              {
-                  found = true;
-                  swarm_new_creation_->my_group_id_ = group.group_id;
-                  swarm_new_creation_->local_id_ = i;
-  
-                  swarm_new_creation_->formation_members_ = group.members;
-                  swarm_new_creation_->local_formation_size_ = swarm_new_creation_->formation_members_.size();
-  
-                  // 生成 desired formation
-                  vector<Eigen::Vector3d> offsets;
-                  offsets.resize(swarm_new_creation_->local_formation_size_);
-  
-                  for (int j = 0; j < swarm_new_creation_->local_formation_size_; j++)
-                  {
-                      offsets[j] = Eigen::Vector3d(group.formation_offsets[j].pose.position.x,group.formation_offsets[j].pose.position.y,group.formation_offsets[j].pose.position.z);
-                  }
-  
-                  // swarm_new_creation_->swarm_graph_->setDesiredForm(offsets);
-                  swarm_new_creation_->setFormationOffsets(offsets);
-
-                  // swarm_visual->formation_size_ = group.members.size();
-                  // swarm_visual->line_size_ = group.members.size();
-                  // swarm_visual->local_id_ = i;
-                  // swarm_visual->members = group.members;
-                  if (group.members.empty()) {
-                    ROS_WARN("line_size_is empty, skipping line generation");
-                  } 
-                  else if (visualization_ && !group.members.empty())
-                  {
-                    visualization_->setFormationSize(group.members.size());
-                    visualization_->setLineSize(group.members.size());
-                    visualization_->setLocalId(i);
-                    visualization_->setMembers(group.members);
-
-                  }
-
-                  // 小群目标
-                  if (!group.goals.empty())
-                  {
-                    auto &p = group.goals[0].pose.position;
-                    Eigen::Vector3d target_goal(p.x, p.y, p.z);
-                    has_goal_ = true;
-                  }
-  
-                  ROS_INFO("[Drone %d] Assigned to group %d (local id %d)",
-                      my_id, swarm_new_creation_->my_group_id_ , swarm_new_creation_->local_id_ );
-  
-                  return;
-              }
-          }
-      }
-  
-      if (!found)
-      {
-          ROS_WARN("[Drone %d] Not assigned to any group!", my_id);
-      }
-  }
-  
-
-
-
-
-  void EGOReplanFSM::relPositionCallback(const geometry_msgs::PoseStampedPtr &msg)
-  {
-    int id = planner_manager_->pp_.drone_id;
-    swarm_relative_pts_[id][0] = msg->pose.position.x;
-    swarm_relative_pts_[id][1] = msg->pose.position.y;
-    swarm_relative_pts_[id][2] = msg->pose.position.z;
-    std::cout<<"relPositionCallback"<<id<<"/n"<<swarm_relative_pts_[id]<<std::endl;
-  }
-
   void EGOReplanFSM::formationWaypointCallback(const geometry_msgs::PoseStampedPtr &msg)
   {
     if (msg->pose.position.z < -0.1)
@@ -739,7 +645,7 @@ namespace ego_planner
     bool success = false;
     swarm_central_pos_(0) = msg->pose.position.x;
     swarm_central_pos_(1) = msg->pose.position.y;
-    swarm_central_pos_(2) = msg->pose.position.z;//之前为0.5
+    swarm_central_pos_(2) = 0.5;
 
     int id = planner_manager_->pp_.drone_id;
 
@@ -748,7 +654,6 @@ namespace ego_planner
                     swarm_relative_pts_[id][1],
                     swarm_relative_pts_[id][2];
     end_pt_ = swarm_central_pos_ + swarm_scale_ * relative_pos;
-    std::cout<<"formationWaypointCallback"<<end_pt_<<std::endl;
 
     std::vector<Eigen::Vector3d> one_pt_wps;
     one_pt_wps.push_back(end_pt_);
@@ -825,6 +730,7 @@ namespace ego_planner
       for (int i = 0; i < i_end; i++)
       {
         gloabl_traj[i] = planner_manager_->traj_.global_traj.traj.getPos(i * step_size_t);
+        // std::cout<<"gloabl_traj[i]"<<gloabl_traj[i]<<std::endl;
       }
 
       end_vel_.setZero();
@@ -844,34 +750,21 @@ namespace ego_planner
 
   bool EGOReplanFSM::planFromGlobalTraj(const int trial_times /*=1*/) // zx-todo
   {
-
+    std::cout<<"planFromGlobalTraj"<<std::endl;
     start_pt_ = odom_pos_;
     start_vel_ = odom_vel_;
     start_acc_.setZero();
 
-    if (fake_)
+    for (int i = 0; i < trial_times; i++)
     {
-      std::cout<<"not use formation"<<std::endl;
-      for (int i = 0; i < trial_times; i++)
+      std::cout<<"planFromGlobalTraj111111111"<<std::endl;
+      if (callReboundReplan(true, false, false))
       {
-        if (callReboundReplan(true, false, false))
-        {
-          return true;
-        }
-      }
-    }
-    else
-    {
-      for (int i = 0; i < trial_times; i++)
-      {
-        if (callReboundReplan(true, false, true))
-        {
-          return true;
-        }
+        std::cout<<"planFromGlobalTraj22222222222"<<std::endl;
+        return true;
       }
     }
     
-  
     return false;
   }
 
@@ -919,8 +812,9 @@ namespace ego_planner
       desired_start_pt = start_pt_;
       desired_start_vel = start_vel_;
       desired_start_acc = start_acc_;
+      std::cout<<"desired_start_pt"<<desired_start_pt<<std::endl;
     }
-    bool plan_success = planner_manager_->reboundReplan(
+    bool plan_success = planner_manager_->reboundReplanTarget(
         desired_start_pt, desired_start_vel, desired_start_acc,
         desired_start_time, local_target_pt_, local_target_vel_,
         (have_new_target_ || flag_use_poly_init),
